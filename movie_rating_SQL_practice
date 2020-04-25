@@ -1,0 +1,169 @@
+https://rextester.com/EBJ22839
+
+--PostgreSQL 9.6
+--'\\' is a delimiter
+
+select version() as postgresql_version; 
+drop table if exists movie;
+drop table if exists reviewer;
+drop table if exists rating;
+
+create table movie("mid" int, "title" text, "year" int, "director" text);
+create table reviewer("rid" int, "name" text);
+create table rating1("rid" int, "mid" int, "stars" int, "ratingdate" date);
+
+insert into movie("mid","title","year","director") 
+values
+(101, 'Gone with the Wind', 1939, 'Victor Fleming'),
+(102, 'Star Wars', 1977, 'George Lucas'),
+(103, 'The Sound of Music', 1965, 'Robert Wise'),
+(104, 'E.T.', 1982, 'Steven Spielberg'),
+(105, 'Titanic', 1997, 'James Cameron'),
+(106, 'Snow White', 1937, null),
+(107, 'Avatar', 2009, 'James Cameron'),
+(108, 'Raiders of the Lost Ark', 1981, 'Steven Spielberg');
+
+insert into reviewer("rid","name") 
+values
+(201, 'Sarah Martinez'),
+(202, 'Daniel Lewis'),
+(203, 'Brittany Harris'),
+(204, 'Mike Anderson'),
+(205, 'Chris Jackson'),
+(206, 'Elizabeth Thomas'),
+(207, 'James Cameron'),
+(208, 'Ashley White');
+
+insert into rating1("rid", "mid", "stars", "ratingdate")
+values
+(201, 101, 2, '2011-01-22'),
+(201, 101, 4, '2011-01-27'),
+(202, 106, 4, null),
+(203, 103, 2, '2011-01-20'),
+(203, 108, 4, '2011-01-12'),
+(203, 108, 2, '2011-01-30'),
+(204, 101, 3, '2011-01-09'),
+(205, 103, 3, '2011-01-27'),
+(205, 104, 2, '2011-01-22'),
+(205, 108, 4, null),
+(206, 107, 3, '2011-01-15'),
+(206, 106, 5, '2011-01-19'),
+(207, 107, 5, '2011-01-20'),
+(208, 104, 3, '2011-01-02');
+
+--------------------------------------------
+--postgreSQL script for movie_project 
+--Task_1: View Tables
+SELECT * FROM movie LIMIT 5;
+SELECT * FROM reviewer LIMIT 5;
+SELECT * FROM rating1 LIMIT 10;
+
+--Task_2: Find the titles of all movies directed by Steven Spielberg. 
+SELECT title 
+FROM movie 
+WHERE director in ('Steven Spielberg'); 
+
+--Task_3: Find all year of ratings for movies which received a rating of 4 or 5, and sort them in increasing order.
+
+SELECT 
+      DISTINCT EXTRACT(year from r.ratingdate),
+      m.title, 
+      r.stars    
+FROM movie m
+RIGHT JOIN rating1 r ON m.mid = r.mid 
+WHERE r.stars > 3
+AND r.ratingdate is not NULL 
+ORDER BY 1,2;
+
+--Task_4: Find the titles of all movies that have no ratings. 
+SELECT DISTINCT m.title 
+FROM movie m 
+LEFT JOIN rating1 r ON m.mid = r.mid
+WHERE r.stars is NULL
+ORDER BY 1; 
+
+
+--Task_5: Find the names of all reviewers who have ratings with a NULL value for the date. 
+--solution 1: 
+SELECT name
+FROM  reviewer  
+WHERE rid in (SELECT rid 
+              FROM rating1 
+              WHERE ratingdate is NULL);
+--solution 2:                 
+SELECT r2.name 
+FROM reviewer r2
+LEFT JOIN rating1 r1 ON r2.rid = r1.rid 
+WHERE r1.ratingdate is NULL;  
+              
+--Task_6: Find For all cases where the same reviewer rated the same movie twice ONLY and give it a higher rating the second time
+--return the reviewer's name and the title of the movie. 
+
+WITH twice_rating AS (
+SELECT rid,
+       mid 
+FROM rating1
+GROUP BY 1, 2
+HAVING count(*) = 2), 
+higher_rating AS(
+     SELECT r1.rid, 
+            r1.mid 
+     FROM rating1 r1, rating1 r2 
+     WHERE r2.rid = r1.rid AND r2.mid = r1.mid 
+     AND r2.stars > r1.stars 
+     AND r2.ratingdate > r1.ratingdate)
+
+SELECT t.rid, t.mid, m.title 
+FROM twice_rating t
+JOIN higher_rating h ON t.rid = h.rid
+JOIN movie m ON t.mid = m.mid;  
+
+--Task_7: For each movie that has at least one rating, find the highest number of stars that movie received. 
+--Return the movie title and the number of stars. Sort by movie title. 
+SELECT title, 
+       max(stars) as top_rating
+FROM movie m 
+JOIN rating1 r ON m.mid = r.mid 
+WHERE r.stars is NOT NULL 
+GROUP BY 1
+ORDER BY 1;
+
+
+--Task_8: For each movie, find the title and the rating spread. 
+--that is the difference between highest and lowest ratings given to that movie. 
+--Sort by rating spread from highest to lowest, then by movie title.
+
+SELECT m.title,
+       max(r.stars) - min(r.stars) as spread
+FROM rating1 r
+LEFT JOIN movie m ON m.mid = r.mid
+WHERE r.stars is NOT NULL
+GROUP BY 1
+ORDER BY 2 DESC, 1;  
+
+
+--Task_9: Find the difference between the average rating of movies released before 1980
+--and the average rating of movies released after 1980. 
+--return single value. 
+WITH r_bf1980 AS (
+    SELECT avg(t1.rating) as rt FROM 
+                        (SELECT m.mid, 
+                               avg(r.stars) as rating 
+                        FROM movie m
+                        JOIN rating1 r ON m.mid = r.mid 
+                        WHERE r.stars is NOT NULL 
+                        AND m.year < 1980
+                        GROUP BY 1) t1), 
+    r_af1980 AS(
+        SELECT avg(t2.rating) as rt FROM 
+                            (SELECT m.mid, 
+                                   avg(r.stars) as rating 
+                            FROM movie m
+                            JOIN rating1 r ON m.mid = r.mid 
+                            WHERE r.stars is NOT NULL 
+                            AND m.year > 1980
+                            GROUP BY 1) t2 ) 
+        
+SELECT round(avg(r_bf1980.rt - r_af1980.rt),2) as rate_diff
+FROM r_bf1980, r_af1980; 
+
